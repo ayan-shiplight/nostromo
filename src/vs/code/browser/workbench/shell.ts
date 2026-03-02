@@ -1281,7 +1281,6 @@ export class ShellApplication {
 	}
 
 	private _handleNotification(notification: IShellNotification): void {
-		console.warn('[Shell] _handleNotification received:', JSON.stringify(notification));
 		if (!notification.active) {
 			// Ignore clear requests from the workbench — notifications are
 			// only dismissed when the user switches to the worktree (see
@@ -1299,12 +1298,9 @@ export class ShellApplication {
 
 	private _updateBadges(worktreePath: string): void {
 		const items = this.repoListEl.querySelectorAll('.worktree-item');
-		console.warn('[Shell] _updateBadges looking for path:', worktreePath, '| DOM items:', items.length);
 		for (const item of items) {
 			const branchEl = item.querySelector('.wt-branch');
-			const title = branchEl?.getAttribute('title');
-			console.warn('[Shell] _updateBadges checking item title:', title);
-			if (!branchEl || title !== worktreePath) {
+			if (!branchEl || branchEl.getAttribute('title') !== worktreePath) {
 				continue;
 			}
 			// Remove existing badge
