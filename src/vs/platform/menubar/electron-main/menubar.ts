@@ -703,13 +703,22 @@ export class Menubar extends Disposable {
 
 		if (isMacintosh) {
 
-			// Add role for special case menu items
+			// Do not register clipboard accelerators with the system. This
+			// lets the keyboard event flow naturally to whichever webContents
+			// has focus (e.g. a shell view WebContentsView), where the
+			// workbench keybinding service handles it through the standard
+			// command pipeline. The shortcut label is still shown in the menu.
+			// On macOS the native NSMenu may still intercept the key; the
+			// click handler below covers that case for shell-editing inputs.
 			if (commandId === 'editor.action.clipboardCutAction') {
-				options.role = 'cut';
+				options.registerAccelerator = false;
+				options.click = this.makeShellEditingAwareClipboardHandler(click, wc => wc.cut());
 			} else if (commandId === 'editor.action.clipboardCopyAction') {
-				options.role = 'copy';
+				options.registerAccelerator = false;
+				options.click = this.makeShellEditingAwareClipboardHandler(click, wc => wc.copy());
 			} else if (commandId === 'editor.action.clipboardPasteAction') {
-				options.role = 'paste';
+				options.registerAccelerator = false;
+				options.click = this.makeShellEditingAwareClipboardHandler(click, wc => wc.paste());
 			}
 
 			// Add context aware click handlers for special case menu items
@@ -756,6 +765,28 @@ export class Menubar extends Disposable {
 
 			// Finally execute command in Window
 			click(menuItem, win || activeWindow, event);
+		};
+	}
+
+	/**
+	 * Wraps a clipboard click handler so that when the shell has an editable
+	 * element focused (e.g. worktree rename input), the native clipboard
+	 * action targets the shell's own webContents. In all other cases the
+	 * original click handler runs, routing through {@link runActionInRenderer}
+	 * and the standard VS Code command pipeline.
+	 */
+	private makeShellEditingAwareClipboardHandler(
+		click: (menuItem: MenuItem, win: BaseWindow, event: KeyboardEvent) => void,
+		nativeAction: (wc: WebContents) => void
+	): (menuItem: MenuItem, win: BaseWindow | undefined, event: KeyboardEvent) => void {
+		return (menuItem: MenuItem, win: BaseWindow | undefined, event: KeyboardEvent) => {
+			const activeWindow = BrowserWindow.getFocusedWindow();
+			if (activeWindow && this.shellViewManager.isShellEditing(activeWindow.id)) {
+				return nativeAction(activeWindow.webContents);
+			}
+
+			// Fall through to the default handler (runActionInRenderer)
+			click(menuItem as MenuItem & IMenuItemWithKeybinding, win || activeWindow!, event);
 		};
 	}
 

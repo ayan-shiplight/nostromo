@@ -27,6 +27,13 @@ export interface IShellViewManager {
 	 * or undefined if there is no active view.
 	 */
 	getActiveViewWebContents(windowId: number): WebContents | undefined;
+
+	/**
+	 * Returns true when the shell UI for the given window has an editable
+	 * element focused (e.g. worktree rename input). Clipboard operations
+	 * should target the shell's own webContents in this case.
+	 */
+	isShellEditing(windowId: number): boolean;
 }
 
 interface IManagedView {
@@ -119,6 +126,10 @@ export class ShellViewManager extends Disposable implements IShellViewManager {
 				this.shellEditingState.set(senderWindow.id, editing);
 			}
 		});
+	}
+
+	isShellEditing(windowId: number): boolean {
+		return this.shellEditingState.get(windowId) === true;
 	}
 
 	getActiveViewWebContents(windowId: number): WebContents | undefined {
