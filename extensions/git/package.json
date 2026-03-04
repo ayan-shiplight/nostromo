@@ -3749,7 +3749,7 @@
             "%config.untrackedChanges.separate%",
             "%config.untrackedChanges.hidden%"
           ],
-          "default": "hidden",
+          "default": "mixed",
           "description": "%config.untrackedChanges%",
           "scope": "resource"
         },
