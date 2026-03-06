@@ -185,7 +185,7 @@ export class ShellWorktreeService extends Disposable {
 
 	async addWorktree(repoPath: string, branchName: string, newBranch: boolean): Promise<{ success: boolean; path?: string; error?: string }> {
 		const sanitized = branchName.replace(/\//g, '-');
-		const worktreePath = `${repoPath}-${sanitized}`;
+		const worktreePath = join(dirname(repoPath), sanitized);
 
 		try {
 			const args = newBranch
