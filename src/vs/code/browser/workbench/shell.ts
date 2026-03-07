@@ -40,6 +40,7 @@ export interface IShellNotification {
  */
 export interface IShellSettings {
 	trackedRepositories: string[];
+	hiddenRepositories?: string[];
 	lastBrowsePath: string;
 	lastActiveWorktree?: string;
 }
@@ -231,6 +232,7 @@ export class ShellApplication {
 	private readonly iframeLRU: string[] = [];
 	private activeWorktreePath: string | null = null;
 	private trackedRepos: string[] = [];
+	private hiddenRepos: string[] = [];
 	private repoWorktrees = new Map<string, IWorktreeInfo[]>();
 	private _activePopupDismiss: (() => void) | null = null;
 	/** Active notifications keyed by `worktreePath:source` */
@@ -290,12 +292,17 @@ export class ShellApplication {
 		try {
 			const settings = await this.backend.loadSettings();
 			this.trackedRepos = settings.trackedRepositories ?? [];
+			this.hiddenRepos = settings.hiddenRepositories ?? [];
 			this.lastBrowsePath = settings.lastBrowsePath ?? '';
-			if (this.trackedRepos.length > 0) {
+			if (this.trackedRepos.length > 0 || this.hiddenRepos.length > 0) {
 				await this.refreshWorktrees();
 				// Auto-activate if no worktree is active from URL param
 				if (!this.activeWorktreePath) {
-					this._restoreOrShowEmpty(settings.lastActiveWorktree);
+					if (this.trackedRepos.length > 0) {
+						this._restoreOrShowEmpty(settings.lastActiveWorktree);
+					} else {
+						this._showEmptyWorkbench();
+					}
 				}
 			} else {
 				// No repos — show empty workbench for menu support
@@ -839,6 +846,7 @@ export class ShellApplication {
 		}
 
 		this.trackedRepos = this.trackedRepos.filter(r => r !== repoUri);
+		this.hiddenRepos = this.hiddenRepos.filter(r => r !== repoUri);
 		this._saveSettings();
 		this.repoWorktrees.delete(repoUri);
 		this._renderRepoList();
@@ -847,19 +855,21 @@ export class ShellApplication {
 	private _saveSettings(): void {
 		this.backend.saveSettings({
 			trackedRepositories: this.trackedRepos,
+			hiddenRepositories: this.hiddenRepos,
 			lastBrowsePath: this.lastBrowsePath,
 			lastActiveWorktree: this.activeWorktreePath ?? undefined
 		});
 	}
 
 	async refreshWorktrees(): Promise<void> {
-		if (this.trackedRepos.length === 0) {
+		const allRepos = [...this.trackedRepos, ...this.hiddenRepos];
+		if (allRepos.length === 0) {
 			this._renderRepoList();
 			return;
 		}
 
 		try {
-			const results = await this.backend.getWorktrees(this.trackedRepos);
+			const results = await this.backend.getWorktrees(allRepos);
 			for (const result of results) {
 				this.repoWorktrees.set(result.repoUri, result.worktrees);
 			}
@@ -874,25 +884,74 @@ export class ShellApplication {
 		this.repoListEl.innerHTML = '';
 
 		for (const repoUri of this.trackedRepos) {
-			const worktrees = this.repoWorktrees.get(repoUri) ?? [];
-			const section = document.createElement('div');
-			section.className = 'repo-section';
+			this.repoListEl.appendChild(this._createRepoSection(repoUri, false));
+		}
 
-			const header = document.createElement('div');
-			header.className = 'repo-header';
+		if (this.hiddenRepos.length > 0) {
+			const hiddenSection = document.createElement('div');
+			hiddenSection.className = 'hidden-section';
+
+			const hiddenHeader = document.createElement('div');
+			hiddenHeader.className = 'hidden-section-header';
 
 			const expandIcon = document.createElement('span');
-			expandIcon.className = 'expand-icon';
+			expandIcon.className = 'expand-icon collapsed';
 			expandIcon.textContent = '\u25BC';
 
-			const repoName = document.createElement('span');
-			try {
-				const repoUrl = new URL(repoUri);
-				repoName.textContent = repoUrl.pathname.split('/').filter(Boolean).pop() ?? repoUri;
-			} catch {
-				repoName.textContent = repoUri;
+			const label = document.createElement('span');
+			label.className = 'hidden-section-label';
+			label.textContent = 'Hidden';
+
+			const count = document.createElement('span');
+			count.className = 'hidden-section-count';
+			count.textContent = String(this.hiddenRepos.length);
+
+			hiddenHeader.appendChild(expandIcon);
+			hiddenHeader.appendChild(label);
+			hiddenHeader.appendChild(count);
+
+			const hiddenBody = document.createElement('div');
+			hiddenBody.className = 'hidden-section-body collapsed';
+
+			for (const repoUri of this.hiddenRepos) {
+				hiddenBody.appendChild(this._createRepoSection(repoUri, true));
 			}
 
+			hiddenHeader.addEventListener('click', () => {
+				const collapsed = hiddenBody.classList.toggle('collapsed');
+				expandIcon.classList.toggle('collapsed', collapsed);
+			});
+
+			hiddenSection.appendChild(hiddenHeader);
+			hiddenSection.appendChild(hiddenBody);
+			this.repoListEl.appendChild(hiddenSection);
+		}
+	}
+
+	private _createRepoSection(repoUri: string, isHidden: boolean): HTMLDivElement {
+		const worktrees = this.repoWorktrees.get(repoUri) ?? [];
+		const section = document.createElement('div');
+		section.className = 'repo-section';
+
+		const header = document.createElement('div');
+		header.className = 'repo-header';
+
+		const expandIcon = document.createElement('span');
+		expandIcon.className = 'expand-icon';
+		expandIcon.textContent = '\u25BC';
+
+		const repoName = document.createElement('span');
+		try {
+			const repoUrl = new URL(repoUri);
+			repoName.textContent = repoUrl.pathname.split('/').filter(Boolean).pop() ?? repoUri;
+		} catch {
+			repoName.textContent = repoUri;
+		}
+
+		header.appendChild(expandIcon);
+		header.appendChild(repoName);
+
+		if (!isHidden) {
 			const addWtBtn = document.createElement('button');
 			addWtBtn.className = 'add-wt-btn';
 			addWtBtn.textContent = '+';
@@ -900,6 +959,15 @@ export class ShellApplication {
 			addWtBtn.addEventListener('click', e => {
 				e.stopPropagation();
 				this._addWorktree(repoUri, header);
+			});
+
+			const hideBtn = document.createElement('button');
+			hideBtn.className = 'hide-repo-btn';
+			hideBtn.textContent = '\u2212';
+			hideBtn.title = 'Hide repository';
+			hideBtn.addEventListener('click', e => {
+				e.stopPropagation();
+				this._hideRepository(repoUri);
 			});
 
 			const removeBtn = document.createElement('button');
@@ -911,80 +979,134 @@ export class ShellApplication {
 				this._removeRepository(repoUri);
 			});
 
-			header.appendChild(expandIcon);
-			header.appendChild(repoName);
 			header.appendChild(addWtBtn);
+			header.appendChild(hideBtn);
 			header.appendChild(removeBtn);
+		} else {
+			expandIcon.classList.add('collapsed');
 
-			const wtList = document.createElement('div');
-			wtList.className = 'worktree-list';
-
-			header.addEventListener('click', () => {
-				const collapsed = wtList.classList.toggle('collapsed');
-				expandIcon.classList.toggle('collapsed', collapsed);
+			const unhideBtn = document.createElement('button');
+			unhideBtn.className = 'unhide-repo-btn';
+			unhideBtn.textContent = '+';
+			unhideBtn.title = 'Unhide repository';
+			unhideBtn.addEventListener('click', e => {
+				e.stopPropagation();
+				this._unhideRepository(repoUri);
 			});
 
-			const mainWorktree = worktrees.find(w => !w.isBare);
+			const removeBtn = document.createElement('button');
+			removeBtn.className = 'remove-btn';
+			removeBtn.textContent = '\u00D7';
+			removeBtn.title = 'Remove repository';
+			removeBtn.addEventListener('click', e => {
+				e.stopPropagation();
+				this._removeRepository(repoUri);
+			});
 
-			for (const wt of worktrees) {
-				const item = document.createElement('div');
-				item.className = 'worktree-item';
-				if (wt.path === this.activeWorktreePath) {
-					item.classList.add('active');
-				}
+			header.appendChild(unhideBtn);
+			header.appendChild(removeBtn);
+		}
 
-				const branchSpan = document.createElement('span');
-				branchSpan.className = 'wt-branch';
-				const branchName = wt.branch ? wt.branch.replace('refs/heads/', '') : wt.path.split('/').pop() ?? wt.path;
-				branchSpan.textContent = branchName;
-				branchSpan.title = wt.path;
-				item.appendChild(branchSpan);
+		const wtList = document.createElement('div');
+		wtList.className = 'worktree-list';
 
-				// Double-click to rename non-main worktree branches
-				if (!wt.isBare && wt !== mainWorktree) {
-					branchSpan.addEventListener('dblclick', e => {
-						e.stopPropagation();
-						this._startInlineRename(branchSpan, branchName, repoUri, wt);
-					});
-				}
+		if (isHidden) {
+			wtList.classList.add('collapsed');
+		}
 
-				// Show notification badge if this worktree has active notifications
-				const notifications = this._getNotificationsForWorktree(wt.path);
-				if (notifications.length > 0) {
-					const badge = this._createNotificationBadge(wt.path, notifications);
-					item.appendChild(badge);
-				}
+		header.addEventListener('click', () => {
+			const collapsed = wtList.classList.toggle('collapsed');
+			expandIcon.classList.toggle('collapsed', collapsed);
+		});
 
-				if (wt.isBare) {
-					const bareTag = document.createElement('span');
-					bareTag.className = 'wt-bare-tag';
-					bareTag.textContent = 'bare';
-					item.appendChild(bareTag);
-				}
+		const mainWorktree = worktrees.find(w => !w.isBare);
 
-				if (!wt.isBare && wt !== mainWorktree) {
-					const archiveBtn = document.createElement('button');
-					archiveBtn.className = 'archive-btn';
-					archiveBtn.textContent = '\u00D7';
-					archiveBtn.title = 'Remove worktree';
-					archiveBtn.addEventListener('click', e => {
-						e.stopPropagation();
-						this._archiveWorktree(repoUri, wt);
-					});
-					item.appendChild(archiveBtn);
-				}
-
-				item.addEventListener('click', () => {
-					this.switchToWorktree(wt.path);
-				});
-
-				wtList.appendChild(item);
+		for (const wt of worktrees) {
+			const item = document.createElement('div');
+			item.className = 'worktree-item';
+			if (wt.path === this.activeWorktreePath) {
+				item.classList.add('active');
 			}
 
-			section.appendChild(header);
-			section.appendChild(wtList);
-			this.repoListEl.appendChild(section);
+			const branchSpan = document.createElement('span');
+			branchSpan.className = 'wt-branch';
+			const branchName = wt.branch ? wt.branch.replace('refs/heads/', '') : wt.path.split('/').pop() ?? wt.path;
+			branchSpan.textContent = branchName;
+			branchSpan.title = wt.path;
+			item.appendChild(branchSpan);
+
+			// Double-click to rename non-main worktree branches (active repos only)
+			if (!isHidden && !wt.isBare && wt !== mainWorktree) {
+				branchSpan.addEventListener('dblclick', e => {
+					e.stopPropagation();
+					this._startInlineRename(branchSpan, branchName, repoUri, wt);
+				});
+			}
+
+			// Show notification badge if this worktree has active notifications
+			const notifications = this._getNotificationsForWorktree(wt.path);
+			if (notifications.length > 0) {
+				const badge = this._createNotificationBadge(wt.path, notifications);
+				item.appendChild(badge);
+			}
+
+			if (wt.isBare) {
+				const bareTag = document.createElement('span');
+				bareTag.className = 'wt-bare-tag';
+				bareTag.textContent = 'bare';
+				item.appendChild(bareTag);
+			}
+
+			if (!isHidden && !wt.isBare && wt !== mainWorktree) {
+				const archiveBtn = document.createElement('button');
+				archiveBtn.className = 'archive-btn';
+				archiveBtn.textContent = '\u00D7';
+				archiveBtn.title = 'Remove worktree';
+				archiveBtn.addEventListener('click', e => {
+					e.stopPropagation();
+					this._archiveWorktree(repoUri, wt);
+				});
+				item.appendChild(archiveBtn);
+			}
+
+			item.addEventListener('click', () => {
+				this.switchToWorktree(wt.path);
+			});
+
+			wtList.appendChild(item);
 		}
+
+		section.appendChild(header);
+		section.appendChild(wtList);
+		return section;
+	}
+
+	private _hideRepository(repoUri: string): void {
+		// If switching away from an active worktree in this repo
+		const worktrees = this.repoWorktrees.get(repoUri) ?? [];
+		if (worktrees.some(wt => wt.path === this.activeWorktreePath)) {
+			this.activeWorktreePath = null;
+			const newUrl = new URL(window.location.href);
+			newUrl.searchParams.delete('folder');
+			history.replaceState(null, '', newUrl.toString());
+			this._showEmptyWorkbench();
+		}
+
+		this.trackedRepos = this.trackedRepos.filter(r => r !== repoUri);
+		if (!this.hiddenRepos.includes(repoUri)) {
+			this.hiddenRepos.push(repoUri);
+		}
+		this._saveSettings();
+		this._renderRepoList();
+	}
+
+	private _unhideRepository(repoUri: string): void {
+		this.hiddenRepos = this.hiddenRepos.filter(r => r !== repoUri);
+		if (!this.trackedRepos.includes(repoUri)) {
+			this.trackedRepos.push(repoUri);
+		}
+		this._saveSettings();
+		this._renderRepoList();
 	}
 
 	private _addWorktree(repoUri: string, anchorEl: HTMLElement): void {
