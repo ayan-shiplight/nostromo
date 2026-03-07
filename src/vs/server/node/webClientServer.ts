@@ -529,7 +529,7 @@ export class WebClientServer {
 
 		const staticRoute = posix.join(basePath, this._productPath, STATIC_PATH);
 
-		const filePath = FileAccess.asFileUri(`vs/code/browser/workbench/shell${this._environmentService.isBuilt ? '' : '-dev'}.html`).fsPath;
+		const filePath = FileAccess.asFileUri('vs/code/browser/workbench/shell.html').fsPath;
 
 		const values: { [key: string]: string } = {
 			SHELL_CONFIGURATION: JSON.stringify(shellConfiguration).replace(/"/g, '&quot;'),

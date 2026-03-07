@@ -1205,7 +1205,7 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 		if (process.env.VSCODE_DEV && process.env.VSCODE_DEV_SERVER_URL) {
 			windowUrl = process.env.VSCODE_DEV_SERVER_URL; // support URL override for development
 		} else if (configuration.isShellWindow) {
-			windowUrl = FileAccess.asBrowserUri(`vs/code/electron-browser/worktrees/worktrees${this.environmentMainService.isBuilt ? '' : '-dev'}.html`).toString(true);
+			windowUrl = FileAccess.asBrowserUri('vs/code/electron-browser/worktrees/worktrees.html').toString(true);
 		} else if (configuration.isSessionsWindow) {
 			windowUrl = FileAccess.asBrowserUri(`vs/sessions/electron-browser/sessions${this.environmentMainService.isBuilt ? '' : '-dev'}.html`).toString(true);
 		} else {

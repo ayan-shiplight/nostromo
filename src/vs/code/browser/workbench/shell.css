@@ -47,6 +47,39 @@ body:has(#shell-titlebar) {
 	overflow: hidden;
 }
 
+#shell-sidebar.collapsed {
+	width: 36px !important;
+	min-width: 36px !important;
+	max-width: 36px !important;
+}
+
+#shell-sidebar.collapsed .sidebar-header > :not(.sidebar-toggle),
+#shell-sidebar.collapsed #repo-list,
+#shell-sidebar.collapsed .sidebar-footer {
+	display: none;
+}
+
+#shell-sidebar.collapsed .sidebar-header {
+	justify-content: center;
+	padding: 10px 0;
+	border-bottom: none;
+}
+
+.sidebar-toggle {
+	background: none;
+	border: none;
+	color: #888;
+	cursor: pointer;
+	font-size: 10px;
+	padding: 2px 4px;
+	line-height: 1;
+	flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+	color: var(--shell-foreground, #cccccc);
+}
+
 #resize-handle {
 	width: 4px;
 	cursor: col-resize;
@@ -55,6 +88,10 @@ body:has(#shell-titlebar) {
 	position: relative;
 	z-index: 10;
 	border-left: 1px solid var(--shell-sidebar-border, #3c3c3c);
+}
+
+#shell-sidebar.collapsed + #resize-handle {
+	display: none;
 }
 
 #resize-handle:hover,
