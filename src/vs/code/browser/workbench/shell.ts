@@ -1110,7 +1110,9 @@ export class ShellApplication {
 				branchSpan.className = 'wt-branch';
 				const branchName = wt.branch ? wt.branch.replace('refs/heads/', '') : wt.path.split('/').pop() ?? wt.path;
 				branchSpan.textContent = branchName;
-				branchSpan.title = wt.path;
+				branchSpan.dataset.path = wt.path;
+				const dirName = wt.path.split('/').pop() ?? wt.path;
+				item.title = branchName + (branchName !== dirName ? '\n' + dirName : '') + '\n' + wt.path;
 				item.appendChild(branchSpan);
 
 				// Double-click to rename non-main worktree branches
@@ -1300,7 +1302,7 @@ export class ShellApplication {
 		const items = this.repoListEl.querySelectorAll('.worktree-item');
 		for (const item of items) {
 			const branchEl = item.querySelector('.wt-branch');
-			if (!branchEl || branchEl.getAttribute('title') !== worktreePath) {
+			if (!branchEl || branchEl.dataset.path !== worktreePath) {
 				continue;
 			}
 			// Remove existing badge
@@ -1375,7 +1377,7 @@ export class ShellApplication {
 		});
 		this.repoListEl.querySelectorAll('.worktree-item').forEach(el => {
 			const branchEl = el.querySelector('.wt-branch');
-			if (branchEl && branchEl.getAttribute('title') === worktreePath) {
+			if (branchEl && branchEl.dataset.path === worktreePath) {
 				el.classList.add('active');
 			}
 		});
