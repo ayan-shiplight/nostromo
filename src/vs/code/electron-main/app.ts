@@ -1328,14 +1328,15 @@ export class CodeApplication extends Disposable {
 		// Shell mode: open a single empty window — the shell UI manages
 		// worktree views itself, so skip session restore which would open
 		// one BrowserWindow per previously-active worktree folder.
+		// Do NOT set initialStartup: untitled workspaces and backup windows
+		// from the previous session would still be restored, adding extra windows.
 		if (process.env['SHELL_MODE'] !== '0') {
 			return windowsMainService.open({
 				context,
 				cli: args,
 				forceNewWindow: true,
 				forceEmpty: true,
-				noRecentEntry: true,
-				initialStartup: true
+				noRecentEntry: true
 			});
 		}
 
