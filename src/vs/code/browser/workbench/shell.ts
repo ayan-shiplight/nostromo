@@ -227,7 +227,7 @@ function createWebBackend(config: IShellConfiguration, iframeContainer: HTMLElem
 export class ShellApplication {
 
 	private readonly backend: IShellBackend;
-	private readonly repoListEl: HTMLElement;
+	private repoListEl: HTMLElement;
 	private readonly iframeContainer: HTMLElement;
 	private readonly sidebarEl: HTMLElement;
 	private readonly iframes = new Map<string, HTMLIFrameElement>();
@@ -907,57 +907,144 @@ export class ShellApplication {
 	}
 
 	private _renderRepoList(): void {
-		this.repoListEl.innerHTML = '';
+		// Replace repoListEl with a clone to clear all prior event listeners
+		const freshList = this.repoListEl.cloneNode(false) as HTMLElement;
+		this.repoListEl.parentNode!.replaceChild(freshList, this.repoListEl);
+		this.repoListEl = freshList;
 
 		for (const repoUri of this.trackedRepos) {
 			this.repoListEl.appendChild(this._createRepoSection(repoUri, false));
 		}
 
-		if (this.hiddenRepos.length > 0) {
-			const hiddenSection = document.createElement('div');
-			hiddenSection.className = 'hidden-section';
+		// Drop zone: visible area (unhide repos dragged here from hidden)
+		this.repoListEl.addEventListener('dragover', (e: DragEvent) => {
+			const target = e.target as HTMLElement;
+			if (target.closest('.hidden-section')) {
+				return;
+			}
+			e.preventDefault();
+			e.dataTransfer!.dropEffect = 'move';
+			this.repoListEl.classList.add('drag-over-visible');
+		});
 
-			const hiddenHeader = document.createElement('div');
-			hiddenHeader.className = 'hidden-section-header';
+		this.repoListEl.addEventListener('dragleave', (e: DragEvent) => {
+			if (!this.repoListEl.contains(e.relatedTarget as Node) ||
+				(e.relatedTarget as HTMLElement)?.closest?.('.hidden-section')) {
+				this.repoListEl.classList.remove('drag-over-visible');
+			}
+		});
 
-			const expandIcon = document.createElement('span');
-			expandIcon.className = 'expand-icon collapsed';
-			expandIcon.textContent = '\u25BC';
+		this.repoListEl.addEventListener('drop', (e: DragEvent) => {
+			const target = e.target as HTMLElement;
+			if (target.closest('.hidden-section')) {
+				return;
+			}
+			e.preventDefault();
+			this.repoListEl.classList.remove('drag-over-visible');
 
-			const label = document.createElement('span');
-			label.className = 'hidden-section-label';
-			label.textContent = 'Hidden';
+			const repoUri = e.dataTransfer!.getData('text/plain');
+			const wasHidden = e.dataTransfer!.getData('application/x-repo-hidden') === 'true';
 
-			const count = document.createElement('span');
-			count.className = 'hidden-section-count';
-			count.textContent = String(this.hiddenRepos.length);
+			if (wasHidden && repoUri) {
+				this._unhideRepository(repoUri);
+			}
+		});
 
-			hiddenHeader.appendChild(expandIcon);
-			hiddenHeader.appendChild(label);
-			hiddenHeader.appendChild(count);
+		// Always render hidden section as a drop target
+		const hiddenSection = document.createElement('div');
+		hiddenSection.className = 'hidden-section';
 
-			const hiddenBody = document.createElement('div');
-			hiddenBody.className = 'hidden-section-body collapsed';
+		const hiddenHeader = document.createElement('div');
+		hiddenHeader.className = 'hidden-section-header';
 
+		const expandIcon = document.createElement('span');
+		expandIcon.className = 'expand-icon collapsed';
+		expandIcon.textContent = '\u25BC';
+
+		const label = document.createElement('span');
+		label.className = 'hidden-section-label';
+		label.textContent = 'Hidden';
+
+		const count = document.createElement('span');
+		count.className = 'hidden-section-count';
+		count.textContent = String(this.hiddenRepos.length);
+
+		hiddenHeader.appendChild(expandIcon);
+		hiddenHeader.appendChild(label);
+		hiddenHeader.appendChild(count);
+
+		const hiddenBody = document.createElement('div');
+		hiddenBody.className = this.hiddenRepos.length > 0 ? 'hidden-section-body collapsed' : 'hidden-section-body';
+
+		if (this.hiddenRepos.length === 0) {
+			expandIcon.classList.remove('collapsed');
+			const emptyHint = document.createElement('div');
+			emptyHint.className = 'hidden-section-empty';
+			emptyHint.textContent = 'Drag repos here to hide';
+			hiddenBody.appendChild(emptyHint);
+		} else {
 			for (const repoUri of this.hiddenRepos) {
 				hiddenBody.appendChild(this._createRepoSection(repoUri, true));
 			}
-
-			hiddenHeader.addEventListener('click', () => {
-				const collapsed = hiddenBody.classList.toggle('collapsed');
-				expandIcon.classList.toggle('collapsed', collapsed);
-			});
-
-			hiddenSection.appendChild(hiddenHeader);
-			hiddenSection.appendChild(hiddenBody);
-			this.repoListEl.appendChild(hiddenSection);
 		}
+
+		hiddenHeader.addEventListener('click', () => {
+			const collapsed = hiddenBody.classList.toggle('collapsed');
+			expandIcon.classList.toggle('collapsed', collapsed);
+		});
+
+		// Drop zone: hidden section (hide repos dragged here from visible)
+		hiddenSection.addEventListener('dragover', (e: DragEvent) => {
+			e.preventDefault();
+			e.dataTransfer!.dropEffect = 'move';
+			hiddenSection.classList.add('drag-over-hidden');
+			hiddenBody.classList.remove('collapsed');
+			expandIcon.classList.remove('collapsed');
+		});
+
+		hiddenSection.addEventListener('dragleave', (e: DragEvent) => {
+			if (!hiddenSection.contains(e.relatedTarget as Node)) {
+				hiddenSection.classList.remove('drag-over-hidden');
+			}
+		});
+
+		hiddenSection.addEventListener('drop', (e: DragEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			hiddenSection.classList.remove('drag-over-hidden');
+
+			const repoUri = e.dataTransfer!.getData('text/plain');
+			const wasHidden = e.dataTransfer!.getData('application/x-repo-hidden') === 'true';
+
+			if (!wasHidden && repoUri) {
+				this._hideRepository(repoUri);
+			}
+		});
+
+		hiddenSection.appendChild(hiddenHeader);
+		hiddenSection.appendChild(hiddenBody);
+		this.repoListEl.appendChild(hiddenSection);
 	}
 
 	private _createRepoSection(repoUri: string, isHidden: boolean): HTMLDivElement {
 		const worktrees = this.repoWorktrees.get(repoUri) ?? [];
 		const section = document.createElement('div');
 		section.className = 'repo-section';
+		section.setAttribute('draggable', 'true');
+		section.dataset.repoUri = repoUri;
+		section.dataset.isHidden = String(isHidden);
+
+		section.addEventListener('dragstart', (e: DragEvent) => {
+			e.dataTransfer!.setData('text/plain', repoUri);
+			e.dataTransfer!.setData('application/x-repo-hidden', String(isHidden));
+			e.dataTransfer!.effectAllowed = 'move';
+			section.classList.add('dragging');
+		});
+
+		section.addEventListener('dragend', () => {
+			section.classList.remove('dragging');
+			this._clearDropIndicators();
+		});
 
 		const header = document.createElement('div');
 		header.className = 'repo-header';
@@ -987,15 +1074,6 @@ export class ShellApplication {
 				this._addWorktree(repoUri, header);
 			});
 
-			const hideBtn = document.createElement('button');
-			hideBtn.className = 'hide-repo-btn';
-			hideBtn.textContent = '\u2212';
-			hideBtn.title = 'Hide repository';
-			hideBtn.addEventListener('click', e => {
-				e.stopPropagation();
-				this._hideRepository(repoUri);
-			});
-
 			const removeBtn = document.createElement('button');
 			removeBtn.className = 'remove-btn';
 			removeBtn.textContent = '\u00D7';
@@ -1006,19 +1084,9 @@ export class ShellApplication {
 			});
 
 			header.appendChild(addWtBtn);
-			header.appendChild(hideBtn);
 			header.appendChild(removeBtn);
 		} else {
 			expandIcon.classList.add('collapsed');
-
-			const unhideBtn = document.createElement('button');
-			unhideBtn.className = 'unhide-repo-btn';
-			unhideBtn.textContent = '+';
-			unhideBtn.title = 'Unhide repository';
-			unhideBtn.addEventListener('click', e => {
-				e.stopPropagation();
-				this._unhideRepository(repoUri);
-			});
 
 			const removeBtn = document.createElement('button');
 			removeBtn.className = 'remove-btn';
@@ -1029,7 +1097,6 @@ export class ShellApplication {
 				this._removeRepository(repoUri);
 			});
 
-			header.appendChild(unhideBtn);
 			header.appendChild(removeBtn);
 		}
 
@@ -1105,6 +1172,15 @@ export class ShellApplication {
 		section.appendChild(header);
 		section.appendChild(wtList);
 		return section;
+	}
+
+	private _clearDropIndicators(): void {
+		this.repoListEl.classList.remove('drag-over-visible');
+		const hiddenSection = this.repoListEl.querySelector('.hidden-section');
+		hiddenSection?.classList.remove('drag-over-hidden');
+		this.repoListEl.querySelectorAll('.repo-section.dragging').forEach(el => {
+			el.classList.remove('dragging');
+		});
 	}
 
 	private _hideRepository(repoUri: string): void {

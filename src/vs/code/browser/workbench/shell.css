@@ -206,49 +206,48 @@ body:has(#shell-titlebar) {
 	color: var(--shell-foreground, #cccccc);
 }
 
-.repo-header .hide-repo-btn {
-	background: none;
-	border: none;
-	color: #888;
-	cursor: pointer;
-	font-size: 16px;
-	padding: 0 4px;
-	visibility: hidden;
-	line-height: 1;
+/* Drag and drop */
+.repo-section[draggable="true"] .repo-header {
+	cursor: grab;
 }
 
-.repo-header:hover .hide-repo-btn {
-	visibility: visible;
+.repo-section.dragging {
+	opacity: 0.4;
 }
 
-.repo-header .hide-repo-btn:hover {
-	color: var(--shell-foreground, #cccccc);
+.repo-section.dragging .repo-header {
+	cursor: grabbing;
 }
 
-.repo-header .unhide-repo-btn {
-	margin-left: auto;
-	background: none;
-	border: none;
-	color: #888;
-	cursor: pointer;
-	font-size: 16px;
-	padding: 0 4px;
-	visibility: hidden;
-	line-height: 1;
+#repo-list.drag-over-visible {
+	background-color: rgba(0, 122, 204, 0.08);
+	outline: 1px dashed rgba(0, 122, 204, 0.4);
+	outline-offset: -1px;
 }
 
-.repo-header:hover .unhide-repo-btn {
-	visibility: visible;
+.hidden-section.drag-over-hidden {
+	background-color: rgba(0, 122, 204, 0.08);
+	outline: 1px dashed rgba(0, 122, 204, 0.4);
+	outline-offset: -1px;
 }
 
-.repo-header .unhide-repo-btn:hover {
-	color: var(--shell-foreground, #cccccc);
+.hidden-section-empty {
+	padding: 8px 20px;
+	font-size: 11px;
+	color: #666;
+	font-style: italic;
+	text-align: center;
 }
 
 /* Hidden section */
 .hidden-section {
 	margin-top: 4px;
+	min-height: 30px;
 	border-top: 1px solid var(--shell-sidebar-border, #3c3c3c);
+}
+
+.hidden-section-body .repo-header .remove-btn {
+	margin-left: auto;
 }
 
 .hidden-section-header {
