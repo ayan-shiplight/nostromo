@@ -51,8 +51,21 @@ class ShellNotificationService implements IShellNotificationService {
 		const firstFolder = workspace.folders[0];
 		this._worktreePath = firstFolder?.uri.path;
 
-		// Check if we're running inside the shell (embedded mode)
-		this._embedded = typeof mainWindow !== 'undefined' && new URLSearchParams(mainWindow.location.search).has('embedded');
+		// Check if we're running inside the shell (embedded mode).
+		// Try URL search params first, fall back to checking the full href
+		// in case location.search doesn't parse correctly for custom schemes.
+		if (typeof mainWindow !== 'undefined') {
+			try {
+				const search = mainWindow.location.search || '';
+				const href = mainWindow.location.href || '';
+				this._embedded = new URLSearchParams(search).has('embedded')
+					|| href.includes('embedded=true');
+			} catch {
+				this._embedded = false;
+			}
+		} else {
+			this._embedded = false;
+		}
 	}
 
 	notify(notification: Omit<IShellNotification, 'worktreePath'>): void {

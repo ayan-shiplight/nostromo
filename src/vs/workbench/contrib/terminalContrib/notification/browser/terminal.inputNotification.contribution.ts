@@ -14,17 +14,27 @@ import { TerminalInputNotificationSettingId } from '../common/terminalInputNotif
 import { IShellNotificationService } from '../../../../services/shell/browser/shellNotificationService.js';
 
 /**
- * Detects when a command finishes in a background workbench terminal and
- * sends a notification to the shell sidebar so a bell badge is shown next
- * to the worktree entry — indicating the terminal is waiting for user input.
+ * Detects when a background workbench terminal needs attention and sends a
+ * notification to the shell sidebar so a bell badge is shown next to the
+ * worktree entry.
+ *
+ * Detection mechanisms (any one triggers a notification):
+ * 1. **Command finished** — shell integration detects a command completion,
+ *    meaning the terminal is now at the shell prompt waiting for user input.
+ * 2. **Terminal bell** — the program explicitly rings the terminal bell (BEL
+ *    character), which is a standard signal for "attention needed."
+ * 3. **Output silence** — terminal output stops for a configurable period
+ *    (default 5 s), indicating the program may be waiting for user input.
+ *    This catches interactive TUI programs (e.g. Claude Code) that prompt
+ *    the user mid-session without exiting to the shell.
  *
  * Rules:
  * 1. Foreground/background status is tracked via shell.activeView messages
  *    (web) and vscode:shellActiveView IPC (Electron).
  * 2. A foreground workbench never sends notifications.
- * 3. Notifications fire when a command completes in the background, meaning
- *    the terminal is now at the shell prompt waiting for user input.
- * 4. Notifications are only dismissed when the user switches to the worktree.
+ * 3. Notifications are only dismissed when the user switches to the worktree.
+ * 4. At most one notification fires per background period (guarded by
+ *    `_notified`), reset when the view transitions foreground → background.
  */
 class TerminalInputNotificationContribution extends Disposable implements ITerminalContribution {
 	static readonly ID = 'terminal.inputNotification';
@@ -34,7 +44,9 @@ class TerminalInputNotificationContribution extends Disposable implements ITermi
 	}
 
 	private _isBackground = false;
+	private _hasNewOutput = false; // new terminal output since going background
 	private _notified = false; // already sent one notification since going background
+	private _silenceTimer: ReturnType<typeof setTimeout> | undefined;
 	private _notificationActive = false;
 
 	constructor(
@@ -46,19 +58,36 @@ class TerminalInputNotificationContribution extends Disposable implements ITermi
 	}
 
 	xtermReady(xterm: IXtermTerminal & { raw: RawXtermTerminal }): void {
+		// --- Detection: output silence ---
+		// Line feeds indicate real content being written to the terminal.
+		this._register(xterm.raw.onLineFeed(() => {
+			this._onTerminalOutput();
+		}));
+
+		// Title changes also indicate output activity.
+		this._register(xterm.raw.onTitleChange(() => {
+			this._onTerminalOutput();
+		}));
+
+		// --- Detection: terminal bell ---
+		this._register(xterm.raw.onBell(() => {
+			this._sendNotification();
+		}));
+
 		// User input — clear any active notification since the user is
 		// interacting with this terminal directly.
 		this._register(xterm.raw.onData(() => {
+			this._clearSilenceTimer();
 			this._clearNotification();
 		}));
 
-		// Listen for command completion via shell integration.
+		// --- Detection: command finished (shell integration) ---
 		const instance = this._ctx.instance;
 		this._register(instance.capabilities.onDidAddCapability(e => {
 			if (e.id === TerminalCapability.CommandDetection) {
 				const cmdDetection = instance.capabilities.get(TerminalCapability.CommandDetection)!;
 				this._register(cmdDetection.onCommandFinished(() => {
-					this._onCommandFinished();
+					this._sendNotification();
 				}));
 			}
 		}));
@@ -67,19 +96,22 @@ class TerminalInputNotificationContribution extends Disposable implements ITermi
 		const cmdDetection = instance.capabilities.get(TerminalCapability.CommandDetection);
 		if (cmdDetection) {
 			this._register(cmdDetection.onCommandFinished(() => {
-				this._onCommandFinished();
+				this._sendNotification();
 			}));
 		}
 
 		// Foreground/background tracking.
 		const onActivated = () => {
 			this._isBackground = false;
+			this._hasNewOutput = false;
 			this._notified = false;
+			this._clearSilenceTimer();
 			// Do NOT clear notification here — the shell dismisses the badge
 			// only when the user switches to this worktree via switchToWorktree().
 		};
 		const onDeactivated = () => {
 			this._isBackground = true;
+			this._hasNewOutput = false;
 			this._notified = false;
 		};
 
@@ -114,7 +146,40 @@ class TerminalInputNotificationContribution extends Disposable implements ITermi
 		});
 	}
 
-	private _onCommandFinished(): void {
+	private _onTerminalOutput(): void {
+		if (!this._isBackground) {
+			return;
+		}
+		this._hasNewOutput = true;
+		this._resetSilenceTimer();
+	}
+
+	private _resetSilenceTimer(): void {
+		this._clearSilenceTimer();
+		if (!this._isEnabled() || !this._isBackground || !this._hasNewOutput || this._notified) {
+			return;
+		}
+		const silenceMs = this._configurationService.getValue<number>(TerminalInputNotificationSettingId.InputNotificationSilenceMs) ?? 5000;
+		this._silenceTimer = setTimeout(() => {
+			this._onSilenceDetected();
+		}, silenceMs);
+	}
+
+	private _clearSilenceTimer(): void {
+		if (this._silenceTimer !== undefined) {
+			clearTimeout(this._silenceTimer);
+			this._silenceTimer = undefined;
+		}
+	}
+
+	private _onSilenceDetected(): void {
+		if (!this._isEnabled() || !this._isBackground || !this._hasNewOutput || this._notified) {
+			return;
+		}
+		this._sendNotification();
+	}
+
+	private _sendNotification(): void {
 		if (!this._isEnabled() || !this._isBackground || this._notified) {
 			return;
 		}
@@ -143,6 +208,7 @@ class TerminalInputNotificationContribution extends Disposable implements ITermi
 	}
 
 	override dispose(): void {
+		this._clearSilenceTimer();
 		this._clearNotification();
 		super.dispose();
 	}
