@@ -301,6 +301,7 @@ body:has(#shell-titlebar) {
 
 .hidden-section-body .repo-header {
 	padding-left: 20px;
+	color: #888;
 }
 
 .hidden-section-body .worktree-item {
