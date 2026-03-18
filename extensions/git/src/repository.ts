@@ -1801,9 +1801,13 @@ export class Repository implements Disposable {
 
 			// Create worktree path based on the branch name
 			if (worktreePath === undefined && branch !== undefined) {
-				worktreeName = branch.startsWith(branchPrefix)
+				const mainRepoName = this.dotGit.commonPath
+					? path.basename(path.dirname(this.dotGit.commonPath))
+					: path.basename(this.root);
+				const sanitizedBranch = branch.startsWith(branchPrefix)
 					? branch.substring(branchPrefix.length).replace(/\//g, '-')
 					: branch.replace(/\//g, '-');
+				worktreeName = `${mainRepoName}-${sanitizedBranch}`;
 
 				worktreePath = defaultWorktreeRoot
 					? path.join(defaultWorktreeRoot, worktreeName)

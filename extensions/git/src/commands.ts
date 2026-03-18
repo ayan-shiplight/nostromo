@@ -3505,9 +3505,11 @@ export class CommandCenter {
 		}
 
 		const { commitish, branch } = worktreeDetails;
-		const worktreeName = ((branch ?? commitish).startsWith(branchPrefix)
+		const mainRepoName = this._getMainRepoName(repository);
+		const sanitizedBranch = ((branch ?? commitish).startsWith(branchPrefix)
 			? (branch ?? commitish).substring(branchPrefix.length).replace(/\//g, '-')
 			: (branch ?? commitish).replace(/\//g, '-'));
+		const worktreeName = `${mainRepoName}-${sanitizedBranch}`;
 
 		// Get path for the new worktree
 		const worktreePath = await this.getWorktreePath(repository, worktreeName);
@@ -3591,6 +3593,13 @@ export class CommandCenter {
 				return { commitish: choice.refName, branch: undefined };
 			}
 		}
+	}
+
+	private _getMainRepoName(repository: Repository): string {
+		if (repository.kind === 'worktree' && repository.dotGit.commonPath) {
+			return path.basename(path.dirname(repository.dotGit.commonPath));
+		}
+		return path.basename(repository.root);
 	}
 
 	private async getWorktreePath(repository: Repository, worktreeName: string): Promise<string | undefined> {

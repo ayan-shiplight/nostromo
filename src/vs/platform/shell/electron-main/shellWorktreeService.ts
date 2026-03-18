@@ -5,7 +5,7 @@
 
 import { execFile } from 'child_process';
 import { promises as fs } from 'fs';
-import { dirname, join, relative, resolve } from '../../../base/common/path.js';
+import { basename, dirname, join, relative, resolve } from '../../../base/common/path.js';
 import { homedir } from 'os';
 import { BrowserWindow, dialog } from 'electron';
 import { URI } from '../../../base/common/uri.js';
@@ -184,8 +184,9 @@ export class ShellWorktreeService extends Disposable {
 	}
 
 	async addWorktree(repoPath: string, branchName: string, newBranch: boolean): Promise<{ success: boolean; path?: string; error?: string }> {
+		const repoName = await this._getMainRepoName(repoPath);
 		const sanitized = branchName.replace(/\//g, '-');
-		const worktreePath = join(dirname(repoPath), sanitized);
+		const worktreePath = join(dirname(repoPath), `${repoName}-${sanitized}`);
 
 		try {
 			const args = newBranch
@@ -283,6 +284,24 @@ export class ShellWorktreeService extends Disposable {
 			}
 		};
 		await walk(sourcePath);
+	}
+
+	/**
+	 * Get the name of the main (non-worktree) repository by finding
+	 * the first entry from `git worktree list`, which is always the
+	 * main worktree. Falls back to `basename(repoPath)`.
+	 */
+	private async _getMainRepoName(repoPath: string): Promise<string> {
+		try {
+			const stdout = await this._execGit(['worktree', 'list', '--porcelain'], repoPath);
+			const match = stdout.match(/^worktree (.+)$/m);
+			if (match) {
+				return basename(match[1]);
+			}
+		} catch {
+			// fall through
+		}
+		return basename(repoPath);
 	}
 
 	private _execGit(args: string[], cwd: string | undefined, timeout = 30000): Promise<string> {
